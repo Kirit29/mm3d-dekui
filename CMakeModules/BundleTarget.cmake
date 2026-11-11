@@ -75,6 +75,19 @@ if (BUNDLE_TARGET_EXECUTE)
                 message(FATAL_ERROR "windeployqt failed: ${windeployqt_result}")
             endif()
 
+            # MSYS2's SDL2 is sdl2-compat, which loads SDL3.dll at runtime. It is
+            # not a link-time import, so dependency scanning does not copy it.
+            if (EXISTS "${executable_parent_dir}/SDL2.dll" AND NOT EXISTS "${executable_parent_dir}/SDL3.dll")
+                find_file(sdl3_dll SDL3.dll PATHS ${BUNDLE_LIBRARY_PATHS} "${QT_TARGET_PATH}/bin" ENV PATH
+                          NO_DEFAULT_PATH NO_CACHE)
+                if (sdl3_dll)
+                    message(STATUS "Bundling runtime-loaded ${sdl3_dll}")
+                    symlink_safe_copy("${sdl3_dll}" "${executable_parent_dir}")
+                else()
+                    message(WARNING "SDL3.dll not found; SDL2.dll may be sdl2-compat and fail to load at runtime")
+                endif()
+            endif()
+
             # Remove the FFmpeg multimedia plugin as we don't include FFmpeg.
             # We want to use the Windows media plugin instead, which is also included.
             file(REMOVE "${executable_parent_dir}/plugins/multimedia/ffmpegmediaplugin.dll")
