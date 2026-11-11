@@ -37,6 +37,8 @@
 #include "mm3d/screen_shrink.h"
 #include "mm3d/minimap.h"
 #include "mm3d/diagnostics.h"
+#include "mm3d/inventory_interpolation.h"
+#include "mm3d/link_pose_capture.h"
 #endif
 #if defined(__APPLE__) && !defined(HAVE_LIBRETRO)
 #include "common/apple_utils.h"
@@ -316,6 +318,19 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
     } else {
         MM3D::EffectCapture::ObservePresentation({MM3D::guest_frames.load(),
             static_cast<unsigned>(MM3D::CameraMidpoint::PresentationStatus::Settings),0,false});
+        // Original (30 FPS): the Items/Masks pages animate at a native 60 Hz.
+        // Present them at 30 Hz like the rest of the game.
+        if(!isSecondaryWindow) {
+            const auto frame=MM3D::guest_frames.load();
+            const bool menu_open=!MM3D::CameraMidpoint::present_60.load() &&
+                MM3D::InventoryInterpolation::Owner(frame,
+                    MM3D::LinkPoseCapture::interpolation_generation.load())!=0;
+            if(!original_menu_cadence.Present(menu_open,frame,MM3D::guest_frame_time_us.load())) {
+                screenRendered=true;
+                Core::PerfStats::game_frames_updated=false;
+                return;
+            }
+        }
         midpoint_clock.Reset();
         midpoint_status_time=0;midpoint_status_pairs=0;midpoint_status_counts={};
         MM3D::CameraMidpoint::presentation_status=MM3D::CameraMidpoint::present_60.load() ?

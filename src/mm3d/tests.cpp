@@ -9,6 +9,7 @@
 #include "mm3d/diagnostics.h"
 #include "mm3d/camera_live.h"
 #include "mm3d/pause_control.h"
+#include "mm3d/original_menu_cadence.h"
 #include "mm3d/draw_probe.h"
 #include "mm3d/settings.h"
 #include "mm3d/game_folder.h"
@@ -391,6 +392,21 @@ int main(int argc, char** argv) {
         MM3D::ResetGuestFrames();
         Require(MM3D::guest_frames == 0 && MM3D::guest_frame_time_us == -1,
                 "reset cannot retain another session's cadence timestamp");
+        {
+            MM3D::OriginalMenuCadence::Gate gate;
+            unsigned shown=0;
+            for(std::uint64_t f=1;f<=60;++f)shown+=gate.Present(true,f,std::int64_t(f)*16667);
+            Require(shown==30,"Original mode shows 60 Hz menu pages at 30 Hz");
+            gate.Reset();shown=0;
+            for(std::uint64_t f=1;f<=30;++f)shown+=gate.Present(true,f,std::int64_t(f)*33333);
+            Require(shown==30,"30 Hz menu pages are never halved");
+            gate.Reset();shown=0;
+            for(std::uint64_t f=1;f<=60;++f)shown+=gate.Present(false,f,std::int64_t(f)*16667);
+            Require(shown==60,"gameplay is never held");
+            gate.Reset();
+            Require(gate.Present(true,5,100000)&&gate.Present(true,5,100000),
+                    "repeated vblanks of the shown frame still present");
+        }
         QTemporaryDir directory;
         Require(directory.isValid(), "temporary directory");
         const auto path = directory.filePath("settings.json");

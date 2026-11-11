@@ -14,6 +14,9 @@
 #include "video_core/renderer_vulkan/vk_present_window.h"
 #endif
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
+#ifdef ENABLE_MM3D_PRESENTATION
+#include "mm3d/original_menu_cadence.h"
+#endif
 #include "video_core/renderer_vulkan/vk_render_manager.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 
@@ -112,6 +115,7 @@ private:
     std::array<unsigned,11> midpoint_status_counts{};
     s64 midpoint_status_time{};
     unsigned midpoint_status_pairs{};
+    MM3D::OriginalMenuCadence::Gate original_menu_cadence;
     void CaptureMidpointFrame(Frame* frame, const std::string& path);
     void DrawMidpointTop(const Common::Rectangle<u32>& top_screen);
 #endif
