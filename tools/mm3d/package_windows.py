@@ -19,6 +19,10 @@ def package(bundle, output, python_archive):
         raise ValueError('Missing bundled azahar.exe')
     if not (bundle / 'plugins/platforms/qwindows.dll').is_file():
         raise ValueError('Missing Qt Windows platform plugin')
+    sdl2 = bundle / 'SDL2.dll'
+    # sdl2-compat loads SDL3.dll at runtime; without it Dekui cannot start.
+    if sdl2.is_file() and b'SDL3.dll' in sdl2.read_bytes() and not (bundle / 'SDL3.dll').is_file():
+        raise ValueError('SDL2.dll is sdl2-compat but SDL3.dll is not bundled')
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / 'dekui'; root.mkdir()
         shutil.copy2(bundle / 'azahar.exe', root / 'Dekui.exe')
