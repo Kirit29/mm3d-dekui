@@ -1,5 +1,5 @@
 name: Re-apply F1 menu style
-# Run by hand after Sync fork. Converts any plain ImGui widgets or tabs that
+# Run by hand after Sync fork, choosing the f1-menu-style branch. Converts any plain ImGui widgets or tabs that
 # upstream added to the F1 menu, and commits the result to the chosen branch.
 on:
   workflow_dispatch:
@@ -12,6 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Check the branch has the F1 menu style
+        run: |
+          if [ ! -f tools/mm3d/reapply_menu_style.py ]; then
+            echo "::error::This branch has no F1 menu style. Run this workflow on f1-menu-style (Use workflow from > f1-menu-style)."
+            exit 1
+          fi
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
