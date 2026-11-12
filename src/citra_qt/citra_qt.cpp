@@ -2,6 +2,8 @@
 #include "mm3d/game_folder.h"
 #include "mm3d/game_setup.h"
 #include "mm3d/controller_autoconfig.h"
+#include "mm3d/menu_controller.h"
+#include "mm3d/diagnostics.h"
 #endif
 #ifdef ENABLE_MM3D_PRESENTATION
 #include "mm3d/player_settings.h"
@@ -1328,6 +1330,44 @@ void GMainWindow::ConnectWidgetEvents() {
                 Settings::LoadProfile(index);system.ApplySettings();config->Save();
                 LOG_INFO(Frontend,"Automatically configured controller in profile {}",index);
             }
+        }
+        // Controller F1 menu: Start+Select opens/closes, B closes, the D-pad,
+        // A and ZL/ZR navigate. Uses the current controller mapping.
+        if(!QApplication::activeModalWidget()) {
+            using MM3D::MenuController::Button;
+            static std::array<std::unique_ptr<Input::ButtonDevice>,Button::Count> menu_devices;
+            static std::array<bool,Button::Count> menu_previous{};
+            static std::string menu_signature;
+            static bool menu_was_open=false;
+            const int logical[Button::Count]{Settings::NativeButton::Up,Settings::NativeButton::Down,
+                Settings::NativeButton::Left,Settings::NativeButton::Right,Settings::NativeButton::A,
+                Settings::NativeButton::B,Settings::NativeButton::ZL,Settings::NativeButton::ZR,
+                Settings::NativeButton::Start,Settings::NativeButton::Select};
+            const auto& bindings=Settings::values.current_input_profile.buttons;
+            std::string signature;
+            for(int b:logical)signature+=bindings[b]+"|";
+            if(signature!=menu_signature) {
+                menu_signature=signature;
+                for(int i=0;i<Button::Count;++i)
+                    menu_devices[i]=Input::CreateDevice<Input::ButtonDevice>(bindings[logical[i]]);
+                menu_previous.fill(true); // A changed mapping must not register as presses.
+            }
+            std::array<bool,Button::Count> down{};
+            for(int i=0;i<Button::Count;++i)down[i]=menu_devices[i]&&menu_devices[i]->GetStatus();
+            const bool chord=down[Button::Start]&&down[Button::Select];
+            if(chord&&!(menu_previous[Button::Start]&&menu_previous[Button::Select]))
+                MM3D::ToggleOverlay();
+            else if(MM3D::overlay_visible.load()&&down[Button::B]&&!menu_previous[Button::B])
+                MM3D::ToggleOverlay();
+            const bool open=MM3D::overlay_visible.load();
+            for(int i=Button::Up;i<=Button::ZR;++i) {
+                if(i==Button::B)continue;
+                if(open&&down[i]!=menu_previous[i])MM3D::MenuButton(i,down[i]);
+                // Release held keys on close so the menu reopens without stuck input.
+                if(!open&&menu_was_open)MM3D::MenuButton(i,false);
+            }
+            menu_was_open=open;
+            menu_previous=down;
         }
 #else
         (void)controller_ticks;

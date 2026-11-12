@@ -221,6 +221,15 @@ bool TextInput(const char* text) {
     text_input.emplace_back(text);
     return true;
 }
+void MenuButton(int button, bool down) {
+    // D-pad moves, A activates/toggles/tweaks, ZL/ZR switch pages. B and
+    // Start+Select are handled by the frontend (they close the menu).
+    constexpr ImGuiKey keys[]={ImGuiKey_GamepadDpadUp,ImGuiKey_GamepadDpadDown,
+        ImGuiKey_GamepadDpadLeft,ImGuiKey_GamepadDpadRight,ImGuiKey_GamepadFaceDown,
+        ImGuiKey_None,ImGuiKey_PageUp,ImGuiKey_PageDown};
+    if(button<0 || button>=int(std::size(keys)) || keys[button]==ImGuiKey_None)return;
+    KeyInput(keys[button],down);
+}
 void KeyInput(int key, bool down) {
     std::scoped_lock lock{input_mutex};
     if (key_input.size() < 256) key_input.emplace_back(key, down);
@@ -490,6 +499,9 @@ Overlay::Overlay(const Vulkan::Instance& instance, vk::Format format, unsigned i
     ImGui::StyleColorsDark();
 #ifdef MM3D_STYLED_MENU
     MenuStyle::Theme(ImGui::GetStyle());
+    // The frontend feeds controller buttons as ImGui gamepad keys (MenuButton).
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    ImGui::GetIO().BackendFlags |= ImGuiBackendFlags_HasGamepad;
     // A TTF stays sharp at full-screen sizes; ImGui's bitmap font does not.
     // Loaded large and scaled down; falls back to the built-in font.
     state.menu_font=MenuStyle::LoadSystemFont(ImGui::GetIO());

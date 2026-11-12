@@ -10,6 +10,8 @@ bool Pointer(float x, float y, int button = -1, bool down = false);
 bool Scroll(float x, float y, float horizontal, float vertical);
 bool TextInput(const char* text);
 void KeyInput(int key, bool down);
+// Controller menu input; button is a MenuController::Button.
+void MenuButton(int button, bool down);
 inline std::atomic<bool> text_input_active{false};
 // Observation only: GSP submissions are not a verified simulation tick counter.
 inline std::atomic<std::uint64_t> guest_frames{0};

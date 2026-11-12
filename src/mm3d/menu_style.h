@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #if defined(ENABLE_MM3D_GAME_FOLDER) && !defined(__ANDROID__)
 #define MM3D_STYLED_MENU 1
@@ -202,6 +203,19 @@ inline constexpr int PageCount(bool diagnostics) {
     return int(std::size(Pages))-(diagnostics?0:1);
 }
 
+// Controller/keyboard focus between the page rail and the page content.
+// ImGui only moves left/right between items that line up horizontally, which
+// the rail and the settings rows don't, so these jumps are explicit.
+struct NavState {
+    bool focus_rail=false, focus_content=false, show_cursor=false, was_content=false;
+    ImGuiID left_from=0; // content item where Left was pressed last frame
+    ImGuiWindow* rail=nullptr;
+};
+inline NavState nav;
+inline bool NavPressed(ImGuiKey gamepad,ImGuiKey keyboard) {
+    return ImGui::IsKeyPressed(gamepad,false)||ImGui::IsKeyPressed(keyboard,false);
+}
+
 struct Layout {float f,gap,header,footer,rail,body;};
 inline Layout Measure(int width,int height) {
     Layout l{};
@@ -222,31 +236,63 @@ inline void Begin(int& page,int count,int width,int height,bool& resume,bool& qu
     if(ImGui::IsKeyPressed(ImGuiKey_PageUp))page=(page+count-1)%count;
     if(ImGui::IsKeyPressed(ImGuiKey_PageDown))page=(page+1)%count;
     const auto l=Measure(width,height);
+    ImGuiContext& g=*GImGui;
+    // Left in the content that ImGui couldn't use (NavId unchanged since the
+    // press) returns to the rail.
+    if(nav.left_from && g.NavId==nav.left_from && !ImGui::IsAnyItemActive())nav.focus_rail=true;
+    // Any move from the content into the rail (Left or Up at the edge) lands
+    // on the current page rather than whichever entry happens to line up.
+    if(nav.was_content && nav.rail && g.NavWindow==nav.rail)nav.focus_rail=true;
+    nav.left_from=0;
+    // ImGui hides the controller highlight after a programmatic focus change,
+    // and A only acts on a highlighted item.
+    if(nav.show_cursor){nav.show_cursor=false;g.NavCursorVisible=true;g.NavHighlightItemUnderNav=true;}
     ImGui::SetCursorPos({l.gap,l.gap});
     ImGui::TextColored(Accent,"Dekui");ImGui::SameLine();ImGui::TextUnformatted("/ Settings");
     ImGui::SetCursorPos({float(width)-l.gap-l.f*5.5f,l.gap});
     resume=ImGui::Button("Resume",{l.f*5.5f,l.header-l.gap});
     ImGui::SetCursorPos({l.gap,l.header+l.gap});
-    ImGui::BeginChild("Categories",{l.rail,l.body},ImGuiChildFlags_None);
+    ImGui::BeginChild("Categories",{l.rail,l.body},ImGuiChildFlags_NavFlattened);
+    nav.rail=ImGui::GetCurrentWindow();
+    if(ImGui::IsWindowFocused() && !ImGui::IsAnyItemActive() &&
+       NavPressed(ImGuiKey_GamepadDpadRight,ImGuiKey_RightArrow))nav.focus_content=true;
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize,0);
     for(int i=0;i<count;++i) {
         ImGui::PushID(i);
         ImGui::PushStyleColor(ImGuiCol_Button,i==page?ImVec4{.24f,.08f,.41f,1}:ImVec4{0,0,0,0});
         if(ImGui::Button(Pages[i].title,{ImGui::GetContentRegionAvail().x,std::max(l.f*1.9f,float(height)*.065f)}))page=i;
-        if(i==page)ImGui::SetItemDefaultFocus();
+        if(i==page) {
+            ImGui::SetItemDefaultFocus();
+            if(nav.focus_rail) {
+                nav.focus_rail=false;
+                ImGui::SetFocusID(ImGui::GetItemID(),ImGui::GetCurrentWindow());
+                ImGui::ScrollToItem();
+                nav.show_cursor=true;
+            }
+        }
         ImGui::PopStyleColor();ImGui::PopID();
     }
     ImGui::PopStyleVar();ImGui::EndChild();
     ImGui::SetCursorPos({l.gap,l.header+l.gap+l.body+l.gap});
     quit=ImGui::Button("Quit game",{l.rail,l.footer-l.gap});
     ImGui::SetCursorPos({l.rail+l.gap*2,l.header+l.gap});
-    ImGui::BeginChild("Settings panel",{float(width)-l.rail-l.gap*3,l.body},ImGuiChildFlags_AlwaysUseWindowPadding);
+    ImGui::BeginChild("Settings panel",{float(width)-l.rail-l.gap*3,l.body},ImGuiChildFlags_AlwaysUseWindowPadding|ImGuiChildFlags_NavFlattened);
     ImGui::TextColored(Accent,"%s",Pages[page].title);
     ImGui::PushStyleColor(ImGuiCol_Text,Muted);
     ImGui::TextWrapped("%s",Pages[page].description);
     ImGui::PopStyleColor();ImGui::Separator();
     const std::string id=std::string("Page/")+Pages[page].id;
-    ImGui::BeginChild(id.c_str(),{0,0},ImGuiChildFlags_None);
+    ImGui::BeginChild(id.c_str(),{0,0},ImGuiChildFlags_NavFlattened);
+    if(ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !ImGui::IsAnyItemActive() &&
+       NavPressed(ImGuiKey_GamepadDpadLeft,ImGuiKey_LeftArrow))nav.left_from=g.NavId;
+    if(nav.focus_content) {
+        // Focus the first setting on this page as it is submitted below.
+        nav.focus_content=false;
+        ImGui::FocusWindow(ImGui::GetCurrentWindow());
+        ImGui::NavInitWindow(ImGui::GetCurrentWindow(),true);
+        nav.show_cursor=true;
+    }
+    nav.was_content=ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*.62f);
 }
 inline bool Page(int current,const char* name) {
@@ -259,7 +305,7 @@ inline void End(const char* status,int width,int height) {
     ImGui::BeginChild("Context help",{float(width)-l.rail-l.gap*3,l.footer},ImGuiChildFlags_None);
     ImGui::SetWindowFontScale(.72f);
     ImGui::PushStyleColor(ImGuiCol_Text,Muted);
-    ImGui::TextWrapped("%s",*status?status:"Hover a setting for details. Page Up / Page Down switches pages.");
+    ImGui::TextWrapped("%s",*status?status:"Hover a setting for details. Controller: D-pad to move, A to select, ZL / ZR to switch pages, B or Start + Select to close.");
     ImGui::PopStyleColor();ImGui::EndChild();
 }
 } // namespace MM3D::MenuStyle

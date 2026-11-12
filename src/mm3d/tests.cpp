@@ -10,6 +10,7 @@
 #include "mm3d/camera_live.h"
 #include "mm3d/pause_control.h"
 #include "mm3d/original_menu_cadence.h"
+#include "mm3d/menu_controller.h"
 #include "mm3d/draw_probe.h"
 #include "mm3d/settings.h"
 #include "mm3d/game_folder.h"
@@ -411,6 +412,20 @@ int main(int argc, char** argv) {
         MM3D::ResetGuestFrames();
         Require(MM3D::guest_frames == 0 && MM3D::guest_frame_time_us == -1,
                 "reset cannot retain another session's cadence timestamp");
+        {
+            using namespace MM3D::MenuController;
+            Gate gate;
+            constexpr std::uint32_t A=1u,B=2u;
+            Require(gate.Filter(A,false)==A,"buttons reach the game normally");
+            Require(gate.Filter(OpenChord,false)==0,"Start+Select never reaches the game");
+            Require(gate.Filter(OpenChord|A,true)==0,"no input while the menu is open");
+            Require(gate.Filter(OpenChord|A,false)==0,"buttons held through closing stay hidden");
+            Require(gate.Filter(A,false)==0,"still held after releasing the chord");
+            Require(gate.Filter(0,false)==0&&gate.Filter(A,false)==A,"a fresh press after release works");
+            Require(gate.Filter(B,true)==0&&gate.Filter(B,false)==0&&gate.Filter(0,false)==0&&gate.Filter(B,false)==B,
+                    "closing with B does not press B in the game");
+            Require(gate.Filter(PadStart,false)==PadStart,"Start alone still pauses the game");
+        }
         {
             MM3D::OriginalMenuCadence::Gate gate;
             unsigned shown=0;
