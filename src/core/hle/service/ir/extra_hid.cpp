@@ -9,6 +9,9 @@
 #include "core/hle/service/hid/hid.h"
 #include "core/hle/service/ir/extra_hid.h"
 #include "core/movie.h"
+#ifdef ENABLE_MM3D_GAME_FOLDER
+#include "mm3d/diagnostics.h"
+#endif
 
 namespace Service::IR {
 
@@ -273,6 +276,13 @@ void ExtraHID::SendHIDStatus() {
         response.unknown = 0;
     }
 
+#ifdef ENABLE_MM3D_GAME_FOLDER
+    // The F1 menu uses ZL/ZR to switch pages; keep them and the C-stick from the game.
+    if(MM3D::overlay_visible.load()) {
+        response.c_stick.c_stick_x.Assign(C_STICK_CENTER);response.c_stick.c_stick_y.Assign(C_STICK_CENTER);
+        response.buttons.zl_not_held.Assign(1);response.buttons.zr_not_held.Assign(1);
+    }
+#endif
     movie.HandleExtraHidResponse(response);
 
     std::vector<u8> response_buffer(sizeof(response));

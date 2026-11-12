@@ -18,4 +18,6 @@ inline std::atomic<int> game_language_status{0}; // 0 idle, 1 pending, 2 saved, 
 inline constexpr bool SupportedLanguage(int value){return value==1||value==2||value==5;}
 inline std::atomic<bool> fullscreen_shortcut{false}, textures_shortcut{false};
 inline std::atomic<bool> controls{false}, fullscreen{false}, quit{false}, about{false};
+// F1 "Select game file": the frontend opens a picker; used on next launch.
+inline std::atomic<bool> select_game{false};
 }

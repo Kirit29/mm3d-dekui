@@ -30,6 +30,8 @@
 #include "mm3d/classic_saving.h"
 #include "mm3d/ocarina_input.h"
 #include "mm3d/file_select_input.h"
+#include "mm3d/menu_controller.h"
+#include "mm3d/diagnostics.h"
 #endif
 
 SERVICE_CONSTRUCT_IMPL(Service::HID::Module)
@@ -278,6 +280,15 @@ void Module::UpdatePadCallback(std::uintptr_t user_data, s64 cycles_late) {
         MM3D::OcarinaInput::Filter(state.hex);
         MM3D::ClassicSaving::FilterArrivalPad(state.hex,circle_pad_x,circle_pad_y);
         MM3D::FileSelectInput::Filter(state.hex,circle_pad_x,circle_pad_y);
+#endif
+#ifdef ENABLE_MM3D_GAME_FOLDER
+        {
+            // The F1 menu takes controller input; the game sees nothing.
+            static MM3D::MenuController::Gate menu_gate;
+            const bool menu_open=MM3D::overlay_visible.load();
+            state.hex=menu_gate.Filter(state.hex,menu_open);
+            if(menu_open){circle_pad_x=0;circle_pad_y=0;}
+        }
 #endif
 
         const DirectionState direction = GetStickDirectionState(circle_pad_x, circle_pad_y);

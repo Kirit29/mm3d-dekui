@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QtEndian>
@@ -39,11 +40,43 @@ inline QString FindRom(const QString& root) {
     const auto legacy=root+QStringLiteral("/game/mm3d.cci");
     return QFileInfo(legacy).isFile()?legacy:QString{};
 }
-inline QString Rom() { return FindRom(Root()); }
-inline QString MissingGameMessage() {
-    return QStringLiteral("Place exactly one decrypted USA v1.1 game-card dump (.cci or .3ds) beside the application, then launch Dekui again. Use a game card with v1.1 preinstalled.");
-}
 inline QString User() { return Root() + QStringLiteral("/user/"); }
+// A game chosen with "Select game file" is remembered here, in the portable
+// user folder, so it survives updates the same way saves do.
+inline QString SelectionFile(const QString& root) { return root + QStringLiteral("/user/game-location.txt"); }
+inline QString SelectedRom(const QString& root) {
+    QFile file(SelectionFile(root));
+    if(!file.open(QIODevice::ReadOnly | QIODevice::Text))return {};
+    const auto path=QString::fromUtf8(file.readAll()).trimmed();
+    return !path.isEmpty() && QFileInfo(path).isFile() ? QFileInfo(path).absoluteFilePath() : QString{};
+}
+// A selected game takes priority; otherwise exactly one game beside the app.
+inline QString FindGame(const QString& root) {
+    const auto selected=SelectedRom(root);
+    return selected.isEmpty() ? FindRom(root) : selected;
+}
+inline QString Rom() { return FindGame(Root()); }
+// Quick container check for a picked file; Validate() checks the full dump.
+inline QString CheckGameFile(const QString& path) {
+    QFile file(path);
+    if(!file.open(QIODevice::ReadOnly))return QStringLiteral("Could not open the selected file.");
+    const auto header=file.read(512);
+    if(header.size()!=512 || header.mid(0x100,4)!="NCSD")
+        return QStringLiteral("This is not a decrypted 3DS game-card dump (.cci or .3ds).");
+    return {};
+}
+inline QString SaveSelectedRom(const QString& root,const QString& path) {
+    if(const auto error=CheckGameFile(path);!error.isEmpty())return error;
+    if(!QDir().mkpath(root + QStringLiteral("/user")))return QStringLiteral("Could not create the user folder.");
+    QSaveFile file(SelectionFile(root));
+    if(!file.open(QIODevice::WriteOnly | QIODevice::Text) ||
+       file.write(QFileInfo(path).absoluteFilePath().toUtf8()+"\n")<0 || !file.commit())
+        return QStringLiteral("Could not save the selected game location.");
+    return {};
+}
+inline QString MissingGameMessage() {
+    return QStringLiteral("Select your decrypted USA v1.1 game-card dump (.cci or .3ds), or place exactly one beside the application and launch Dekui again. Use a game card with v1.1 preinstalled.");
+}
 inline QString Validate() {
     QFile file(Rom());
     if (!file.open(QIODevice::ReadOnly))

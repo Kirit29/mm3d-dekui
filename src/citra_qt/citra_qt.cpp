@@ -2,6 +2,8 @@
 #include "mm3d/game_folder.h"
 #include "mm3d/game_setup.h"
 #include "mm3d/controller_autoconfig.h"
+#include "mm3d/menu_controller.h"
+#include "mm3d/diagnostics.h"
 #endif
 #ifdef ENABLE_MM3D_PRESENTATION
 #include "mm3d/player_settings.h"
@@ -1230,6 +1232,40 @@ void GMainWindow::ConnectAppEvents() {
     connect(filter, &GApplicationEventFilter::ExitFullscreen, this, &GMainWindow::ExitFullscreen);
 }
 
+#ifdef ENABLE_MM3D_GAME_FOLDER
+// Pick a game-card dump and remember it for later launches. With required,
+// the user may retry or quit; otherwise cancelling keeps the current game.
+static bool MM3DSelectGame(QWidget* parent, bool required) {
+    while (true) {
+        if (required) {
+            QMessageBox box(QMessageBox::Information, QStringLiteral("Game required"),
+                            MM3D::GameFolder::MissingGameMessage(), QMessageBox::NoButton, parent);
+            auto* select = box.addButton(QStringLiteral("Select game file..."), QMessageBox::AcceptRole);
+            box.addButton(QStringLiteral("Quit"), QMessageBox::RejectRole);
+            box.exec();
+            if (box.clickedButton() != select)
+                return false;
+        }
+        const auto start = QFileInfo(MM3D::GameFolder::Rom()).absolutePath();
+        const auto path = QFileDialog::getOpenFileName(
+            parent, QStringLiteral("Select Majora's Mask 3D game file"),
+            start.isEmpty() ? MM3D::GameFolder::Root() : start,
+            QStringLiteral("3DS game-card dumps (*.3ds *.cci);;All files (*)"));
+        if (path.isEmpty()) {
+            if (required)
+                continue;
+            return false;
+        }
+        const auto error = MM3D::GameFolder::SaveSelectedRom(MM3D::GameFolder::Root(), path);
+        if (error.isEmpty())
+            return true;
+        QMessageBox::warning(parent, QStringLiteral("Game file"), error);
+        if (!required)
+            return false;
+    }
+}
+#endif
+
 void GMainWindow::ConnectWidgetEvents() {
     connect(game_list, &GameList::GameChosen, this, &GMainWindow::OnGameListLoadFile);
     connect(game_list, &GameList::OpenDirectory, this, &GMainWindow::OnGameListOpenDirectory);
@@ -1295,6 +1331,44 @@ void GMainWindow::ConnectWidgetEvents() {
                 LOG_INFO(Frontend,"Automatically configured controller in profile {}",index);
             }
         }
+        // Controller F1 menu: Start+Select opens/closes, B closes, the D-pad,
+        // A and ZL/ZR navigate. Uses the current controller mapping.
+        if(!QApplication::activeModalWidget()) {
+            using MM3D::MenuController::Button;
+            static std::array<std::unique_ptr<Input::ButtonDevice>,Button::Count> menu_devices;
+            static std::array<bool,Button::Count> menu_previous{};
+            static std::string menu_signature;
+            static bool menu_was_open=false;
+            const int logical[Button::Count]{Settings::NativeButton::Up,Settings::NativeButton::Down,
+                Settings::NativeButton::Left,Settings::NativeButton::Right,Settings::NativeButton::A,
+                Settings::NativeButton::B,Settings::NativeButton::ZL,Settings::NativeButton::ZR,
+                Settings::NativeButton::Start,Settings::NativeButton::Select};
+            const auto& bindings=Settings::values.current_input_profile.buttons;
+            std::string signature;
+            for(int b:logical)signature+=bindings[b]+"|";
+            if(signature!=menu_signature) {
+                menu_signature=signature;
+                for(int i=0;i<Button::Count;++i)
+                    menu_devices[i]=Input::CreateDevice<Input::ButtonDevice>(bindings[logical[i]]);
+                menu_previous.fill(true); // A changed mapping must not register as presses.
+            }
+            std::array<bool,Button::Count> down{};
+            for(int i=0;i<Button::Count;++i)down[i]=menu_devices[i]&&menu_devices[i]->GetStatus();
+            const bool chord=down[Button::Start]&&down[Button::Select];
+            if(chord&&!(menu_previous[Button::Start]&&menu_previous[Button::Select]))
+                MM3D::ToggleOverlay();
+            else if(MM3D::overlay_visible.load()&&down[Button::B]&&!menu_previous[Button::B])
+                MM3D::ToggleOverlay();
+            const bool open=MM3D::overlay_visible.load();
+            for(int i=Button::Up;i<=Button::ZR;++i) {
+                if(i==Button::B)continue;
+                if(open&&down[i]!=menu_previous[i])MM3D::MenuButton(i,down[i]);
+                // Release held keys on close so the menu reopens without stuck input.
+                if(!open&&menu_was_open)MM3D::MenuButton(i,false);
+            }
+            menu_was_open=open;
+            menu_previous=down;
+        }
 #else
         (void)controller_ticks;
 #endif
@@ -1313,6 +1387,14 @@ void GMainWindow::ConnectWidgetEvents() {
             }
             render_window->setFocus();
         }
+#ifdef ENABLE_MM3D_GAME_FOLDER
+        if(select_game.exchange(false)) {
+            if(MM3DSelectGame(this, false))
+                QMessageBox::information(this,tr("Game file selected"),
+                    tr("Close and reopen Dekui to use the selected game file. Your saves and settings are kept."));
+            render_window->setFocus();
+        }
+#endif
         if(open_textures.exchange(false)) {
             const auto path=QString::fromStdString(FileUtil::GetUserPath(FileUtil::UserPath::LoadDir))+
                 QStringLiteral("textures/0004000000125500");
@@ -4931,10 +5013,8 @@ int LaunchQtFrontend(int argc, char* argv[]) {
         return 0;
     }
 #ifdef ENABLE_MM3D_GAME_FOLDER
-    if (MM3D::GameFolder::Rom().isEmpty()) {
-        QMessageBox::information(nullptr, QStringLiteral("Game required"), MM3D::GameFolder::MissingGameMessage());
+    if (MM3D::GameFolder::Rom().isEmpty() && !MM3DSelectGame(nullptr, true))
         return 1;
-    }
     if (const auto error=MM3D::GameFolder::Prepare(); !error.isEmpty()) {
         QMessageBox::critical(nullptr, QStringLiteral("Dekui setup"), error);
         return 1;
