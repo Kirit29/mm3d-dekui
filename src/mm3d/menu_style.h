@@ -147,17 +147,25 @@ inline bool Combo(const char* label,int* v,const char* items,int height=-1) {
 #endif
 }
 
-// Pages in rail order. "Diagnostics" is last and only listed when enabled.
-inline constexpr const char* Pages[]={"General","Controls","Graphics","Audio","HUD",
-    "Difficulty","Restoration","QOL","About","Diagnostics"};
-inline constexpr const char* Titles[]={"General","Controls","Graphics","Audio","HUD",
-    "Difficulty","Restoration","Quality of life","About","Diagnostics"};
-inline constexpr const char* Descriptions[]={
-    "Make Dekui comfortable on your screen.","Map your controller and game controls.",
-    "Frame rate, resolution and custom textures.","Sound, music and volume.",
-    "Adjust the HUD while keeping your chosen layout.","Damage, healing and world rules.",
-    "Choose your Project Restoration features.","Small changes for a more comfortable adventure.",
-    "About Dekui and its contributors.","Performance capture for bug reports."};
+// Pages in rail order: id used by begin_page(), rail title, description.
+// Keep "Diagnostics" last; it is only listed when DEKUI_DIAGNOSTICS=1.
+// tools/mm3d/reapply_menu_style.py inserts new pages above "Diagnostics".
+struct PageInfo {const char* id; const char* title; const char* description;};
+inline constexpr PageInfo Pages[]={
+    {"General","General","Make Dekui comfortable on your screen."},
+    {"Controls","Controls","Map your controller and game controls."},
+    {"Graphics","Graphics","Frame rate, resolution and custom textures."},
+    {"Audio","Audio","Sound, music and volume."},
+    {"HUD","HUD","Adjust the HUD while keeping your chosen layout."},
+    {"Difficulty","Difficulty","Damage, healing and world rules."},
+    {"Restoration","Restoration","Choose your Project Restoration features."},
+    {"QOL","Quality of life","Small changes for a more comfortable adventure."},
+    {"About","About","About Dekui and its contributors."},
+    {"Diagnostics","Diagnostics","Performance capture for bug reports."},
+};
+inline constexpr int PageCount(bool diagnostics) {
+    return int(std::size(Pages))-(diagnostics?0:1);
+}
 
 struct Layout {float f,gap,header,footer,rail,body;};
 inline Layout Measure(int width,int height) {
@@ -189,7 +197,7 @@ inline void Begin(int& page,int count,int width,int height,bool& resume,bool& qu
     for(int i=0;i<count;++i) {
         ImGui::PushID(i);
         ImGui::PushStyleColor(ImGuiCol_Button,i==page?ImVec4{.24f,.08f,.41f,1}:ImVec4{0,0,0,0});
-        if(ImGui::Button(Titles[i],{ImGui::GetContentRegionAvail().x,std::max(l.f*1.9f,float(height)*.065f)}))page=i;
+        if(ImGui::Button(Pages[i].title,{ImGui::GetContentRegionAvail().x,std::max(l.f*1.9f,float(height)*.065f)}))page=i;
         if(i==page)ImGui::SetItemDefaultFocus();
         ImGui::PopStyleColor();ImGui::PopID();
     }
@@ -198,16 +206,16 @@ inline void Begin(int& page,int count,int width,int height,bool& resume,bool& qu
     quit=ImGui::Button("Quit game",{l.rail,l.footer-l.gap});
     ImGui::SetCursorPos({l.rail+l.gap*2,l.header+l.gap});
     ImGui::BeginChild("Settings panel",{float(width)-l.rail-l.gap*3,l.body},ImGuiChildFlags_AlwaysUseWindowPadding);
-    ImGui::TextColored(Accent,"%s",Titles[page]);
+    ImGui::TextColored(Accent,"%s",Pages[page].title);
     ImGui::PushStyleColor(ImGuiCol_Text,Muted);
-    ImGui::TextWrapped("%s",Descriptions[page]);
+    ImGui::TextWrapped("%s",Pages[page].description);
     ImGui::PopStyleColor();ImGui::Separator();
-    const std::string id=std::string("Page/")+Pages[page];
+    const std::string id=std::string("Page/")+Pages[page].id;
     ImGui::BeginChild(id.c_str(),{0,0},ImGuiChildFlags_None);
     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*.62f);
 }
 inline bool Page(int current,const char* name) {
-    return current>=0&&current<int(std::size(Pages))&&std::string(name)==Pages[current];
+    return current>=0&&current<int(std::size(Pages))&&std::string(name)==Pages[current].id;
 }
 inline void End(const char* status,int width,int height) {
     ImGui::PopItemWidth();ImGui::EndChild();ImGui::EndChild();

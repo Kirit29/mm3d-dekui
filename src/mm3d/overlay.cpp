@@ -1236,7 +1236,7 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
 #ifdef MM3D_STYLED_MENU
         static const bool styled_diagnostics=qEnvironmentVariable("DEKUI_DIAGNOSTICS")==QStringLiteral("1");
         bool menu_resume=false,menu_quit=false;
-        MenuStyle::Begin(state.menu_page,styled_diagnostics?10:9,width,height,menu_resume,menu_quit);
+        MenuStyle::Begin(state.menu_page,MenuStyle::PageCount(styled_diagnostics),width,height,menu_resume,menu_quit);
         const auto begin_page=[&](const char* page){return MenuStyle::Page(state.menu_page,page);};
         const auto end_page=[](){};
         {
