@@ -306,6 +306,25 @@ int main(int argc, char** argv) {
             Require(MM3D::GameFolder::FindRom(root)==legacy.fileName(),"legacy portable game remains supported");
         }
         {
+            QTemporaryDir games, elsewhere;Require(games.isValid()&&elsewhere.isValid(),"game selection fixture");
+            const auto root=games.path();
+            const auto write=[](const QString& path,bool ncsd) {
+                QByteArray header(512,'\0');if(ncsd)header.replace(0x100,4,"NCSD");
+                QFile file(path);return file.open(QIODevice::WriteOnly)&&file.write(header)==512;
+            };
+            const auto picked=elsewhere.filePath("Majora picked.cci"), junk=elsewhere.filePath("notes.3ds");
+            Require(write(picked,true)&&write(junk,false),"selection fixtures");
+            Require(MM3D::GameFolder::FindGame(root).isEmpty(),"no selection and no game beside app");
+            Require(!MM3D::GameFolder::SaveSelectedRom(root,junk).isEmpty(),"non-NCSD file is rejected");
+            Require(MM3D::GameFolder::FindGame(root).isEmpty(),"rejected file is not remembered");
+            Require(MM3D::GameFolder::SaveSelectedRom(root,picked).isEmpty(),"game-card dump can be selected");
+            Require(MM3D::GameFolder::FindGame(root)==QFileInfo(picked).absoluteFilePath(),"selected game is used from anywhere");
+            Require(write(games.filePath("beside.3ds"),true),"game beside app");
+            Require(MM3D::GameFolder::FindGame(root)==QFileInfo(picked).absoluteFilePath(),"selection takes priority over a game beside the app");
+            Require(QFile::remove(picked),"remove selected game");
+            Require(MM3D::GameFolder::FindGame(root)==games.filePath("beside.3ds"),"missing selection falls back to the game beside the app");
+        }
+        {
             using namespace MM3D::Notebook::Paths;
             QTemporaryDir old_folder, new_folder;
             Require(old_folder.isValid() && new_folder.isValid(), "notebook relocation fixtures");

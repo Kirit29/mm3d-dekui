@@ -1230,6 +1230,40 @@ void GMainWindow::ConnectAppEvents() {
     connect(filter, &GApplicationEventFilter::ExitFullscreen, this, &GMainWindow::ExitFullscreen);
 }
 
+#ifdef ENABLE_MM3D_GAME_FOLDER
+// Pick a game-card dump and remember it for later launches. With required,
+// the user may retry or quit; otherwise cancelling keeps the current game.
+static bool MM3DSelectGame(QWidget* parent, bool required) {
+    while (true) {
+        if (required) {
+            QMessageBox box(QMessageBox::Information, QStringLiteral("Game required"),
+                            MM3D::GameFolder::MissingGameMessage(), QMessageBox::NoButton, parent);
+            auto* select = box.addButton(QStringLiteral("Select game file..."), QMessageBox::AcceptRole);
+            box.addButton(QStringLiteral("Quit"), QMessageBox::RejectRole);
+            box.exec();
+            if (box.clickedButton() != select)
+                return false;
+        }
+        const auto start = QFileInfo(MM3D::GameFolder::Rom()).absolutePath();
+        const auto path = QFileDialog::getOpenFileName(
+            parent, QStringLiteral("Select Majora's Mask 3D game file"),
+            start.isEmpty() ? MM3D::GameFolder::Root() : start,
+            QStringLiteral("3DS game-card dumps (*.3ds *.cci);;All files (*)"));
+        if (path.isEmpty()) {
+            if (required)
+                continue;
+            return false;
+        }
+        const auto error = MM3D::GameFolder::SaveSelectedRom(MM3D::GameFolder::Root(), path);
+        if (error.isEmpty())
+            return true;
+        QMessageBox::warning(parent, QStringLiteral("Game file"), error);
+        if (!required)
+            return false;
+    }
+}
+#endif
+
 void GMainWindow::ConnectWidgetEvents() {
     connect(game_list, &GameList::GameChosen, this, &GMainWindow::OnGameListLoadFile);
     connect(game_list, &GameList::OpenDirectory, this, &GMainWindow::OnGameListOpenDirectory);
@@ -1313,6 +1347,14 @@ void GMainWindow::ConnectWidgetEvents() {
             }
             render_window->setFocus();
         }
+#ifdef ENABLE_MM3D_GAME_FOLDER
+        if(select_game.exchange(false)) {
+            if(MM3DSelectGame(this, false))
+                QMessageBox::information(this,tr("Game file selected"),
+                    tr("Close and reopen Dekui to use the selected game file. Your saves and settings are kept."));
+            render_window->setFocus();
+        }
+#endif
         if(open_textures.exchange(false)) {
             const auto path=QString::fromStdString(FileUtil::GetUserPath(FileUtil::UserPath::LoadDir))+
                 QStringLiteral("textures/0004000000125500");
@@ -4931,10 +4973,8 @@ int LaunchQtFrontend(int argc, char* argv[]) {
         return 0;
     }
 #ifdef ENABLE_MM3D_GAME_FOLDER
-    if (MM3D::GameFolder::Rom().isEmpty()) {
-        QMessageBox::information(nullptr, QStringLiteral("Game required"), MM3D::GameFolder::MissingGameMessage());
+    if (MM3D::GameFolder::Rom().isEmpty() && !MM3DSelectGame(nullptr, true))
         return 1;
-    }
     if (const auto error=MM3D::GameFolder::Prepare(); !error.isEmpty()) {
         QMessageBox::critical(nullptr, QStringLiteral("Dekui setup"), error);
         return 1;
