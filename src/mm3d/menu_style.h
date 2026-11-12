@@ -5,9 +5,12 @@
 // Android keep the default ImGui widgets.
 #pragma once
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <string>
+#include <vector>
 #include <imgui.h>
 
 #if defined(ENABLE_MM3D_GAME_FOLDER) && !defined(__ANDROID__)
@@ -55,6 +58,38 @@ inline void Theme(ImGuiStyle& s) {
 inline const char* LabelEnd(const char* label) {
     const char* hash=std::strstr(label,"##");
     return hash?hash:label+std::strlen(label);
+}
+
+// Menu size relative to a 720p window, times the user's Settings size.
+inline float ContentScale(float height,float user_scale) {
+    return std::clamp(height/720.f,.65f,4.f)*1.35f*std::clamp(user_scale,.5f,2.f);
+}
+// System fonts are loaded at FontPixels and drawn at the built-in font's 13px
+// baseline before ContentScale, so layouts match the fallback font.
+inline constexpr float FontPixels=52.f, FontScale=13.f/FontPixels;
+inline bool LoadSystemFont(ImGuiIO& io) {
+    std::vector<std::string> candidates;
+#ifdef _WIN32
+    const char* windir=std::getenv("WINDIR");
+    const std::string fonts=std::string(windir&&*windir?windir:"C:\\Windows")+"\\Fonts\\";
+    for(const char* name:{"segoeui.ttf","arial.ttf","tahoma.ttf"})candidates.push_back(fonts+name);
+#elif defined(__APPLE__)
+    candidates={"/System/Library/Fonts/Supplemental/Arial.ttf","/Library/Fonts/Arial.ttf",
+                "/System/Library/Fonts/Supplemental/Verdana.ttf"};
+#else
+    candidates={"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf","/usr/share/fonts/TTF/DejaVuSans.ttf",
+                "/usr/share/fonts/dejavu/DejaVuSans.ttf","/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+                "/usr/share/fonts/noto/NotoSans-Regular.ttf","/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"};
+#endif
+    for(const auto& path:candidates) {
+        std::FILE* file=std::fopen(path.c_str(),"rb");
+        if(!file)continue;
+        std::fclose(file);
+        // Default glyph ranges include Latin-1 for the French and Spanish text.
+        if(io.Fonts->AddFontFromFileTTF(path.c_str(),FontPixels))return true;
+    }
+    return false;
 }
 
 inline float ControlWidth() {

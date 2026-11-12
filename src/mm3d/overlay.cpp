@@ -82,6 +82,9 @@
 #include <backends/imgui_impl_vulkan.h>
 #include "mm3d/cpu_interpolation.h"
 #include "mm3d/menu_style.h"
+#ifdef ENABLE_MM3D_GAME_FOLDER
+#include "mm3d/game_folder.h"
+#endif
 
 namespace MM3D {
 namespace {
@@ -403,6 +406,7 @@ struct Overlay::Impl {
     bool resize_settings_window=false;
     int settings_size_step=0;
     int menu_page=0;
+    bool menu_font=false;
     bool editing_settings_size=false;
     Notebook::Settings notebook;
     Timing timing;
@@ -486,6 +490,9 @@ Overlay::Overlay(const Vulkan::Instance& instance, vk::Format format, unsigned i
     ImGui::StyleColorsDark();
 #ifdef MM3D_STYLED_MENU
     MenuStyle::Theme(ImGui::GetStyle());
+    // A TTF stays sharp at full-screen sizes; ImGui's bitmap font does not.
+    // Loaded large and scaled down; falls back to the built-in font.
+    state.menu_font=MenuStyle::LoadSystemFont(ImGui::GetIO());
 #endif
     state.base_style=ImGui::GetStyle();
     const auto loader = [](const char* name, void* data) -> PFN_vkVoidFunction {
@@ -601,10 +608,18 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
     const double now = Now();
     io.DeltaTime = static_cast<float>(std::clamp(now - state.previous, .00001, .25));
     state.previous = now;
-    io.FontGlobalScale = state.settings.scale;
+#ifdef MM3D_STYLED_MENU
+    // The full-screen menu follows the window height (720p baseline); the
+    // Settings size slider adjusts on top of that.
+    const float content_scale=MenuStyle::ContentScale(float(height),state.settings.scale);
+    io.FontGlobalScale=content_scale*(state.menu_font?MenuStyle::FontScale:1.f);
+#else
+    const float content_scale=state.settings.scale;
+    io.FontGlobalScale=content_scale;
+#endif
     // Always scale from the original style so repeated adjustments do not drift.
     ImGui::GetStyle()=state.base_style;
-    ImGui::GetStyle().ScaleAllSizes(state.settings.scale);
+    ImGui::GetStyle().ScaleAllSizes(content_scale);
     {
         std::scoped_lock lock{input_mutex};
         for (const auto& event : input) {
@@ -1047,6 +1062,11 @@ void Overlay::Draw(vk::CommandBuffer command, vk::Framebuffer framebuffer,
             else if(ShaderCacheReset::completed.load())
                 ImGui::TextWrapped("Shader cache reset complete. Shaders will rebuild as you play.");
 #ifdef ENABLE_MM3D_GAME_FOLDER
+            // The running game; a new selection is used from the next launch.
+            static const std::string current_game=QFileInfo(GameFolder::Rom()).fileName().toStdString();
+            if(ImGui::Button("Select game file..."))PlayerSettings::select_game.store(true);
+            hover_help("Choose your Majora's Mask 3D game file (.cci or .3ds) from anywhere on this computer. Dekui remembers it and uses it the next time it starts. Saves and settings are kept.");
+            if(!current_game.empty())ImGui::TextWrapped("Current game: %s",current_game.c_str());
             static QString menu_reset_status;
             if(ImGui::Button("Reset menu layouts")) {
                 const auto error=ResetMenuLayouts(state.directory+"presentation.json",
